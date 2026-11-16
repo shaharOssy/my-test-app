@@ -75,6 +75,7 @@
         <div class="counter-display" id="count">0</div>
         
         <button onclick="increaseCount()">לחץ עליי (+1)</button>
+        <button onclick="decreaseCount()">הורד (-1)</button>
         <button class="secondary" onclick="resetCount()">איפוס</button>
         <br><br>
         <button class="secondary" onclick="toggleTheme()">החלף מצב יום/לילה 🌓</button>
@@ -88,7 +89,11 @@
             count++;
             countDisplay.textContent = count;
         }
-
+                
+        function decreaseCount() {
+            count--;
+            countDisplay.textContent = count;
+        }
         function resetCount() {
             count = 0;
             countDisplay.textContent = count;

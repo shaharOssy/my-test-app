@@ -83,14 +83,23 @@ async function listModernModels(apiKey, excludeModel) {
                 const version = getModernGeminiVersion(id);
                 if (version === null) return false;
                 const lower = id.toLowerCase();
-                return !lower.includes('tts') && !lower.includes('image') && !lower.includes('robotics');
+                if (!lower.includes('flash')) return false;
+                return (
+                    !lower.includes('argon') &&
+                    !lower.includes('pro') &&
+                    !lower.includes('ultra') &&
+                    !lower.includes('exp') &&
+                    !lower.includes('tts') &&
+                    !lower.includes('image') &&
+                    !lower.includes('robotics')
+                );
             })
             .sort((a, b) => {
                 const verDiff = (getModernGeminiVersion(b) || 0) - (getModernGeminiVersion(a) || 0);
                 if (verDiff !== 0) return verDiff;
-                const aFlash = a.toLowerCase().includes('flash') ? 1 : 0;
-                const bFlash = b.toLowerCase().includes('flash') ? 1 : 0;
-                return bFlash - aFlash;
+                const aLite = a.toLowerCase().includes('lite') ? 1 : 0;
+                const bLite = b.toLowerCase().includes('lite') ? 1 : 0;
+                return aLite - bLite;
             });
 
         return { models: candidates, error: null };
@@ -139,8 +148,9 @@ module.exports = async function handler(req, res) {
             }
         });
 
+        const deadline = Date.now() + 9200;
         const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const primaryResult = await callGeminiModel(primaryModel, apiKey, requestBody, 4000);
+        const primaryResult = await callGeminiModel(primaryModel, apiKey, requestBody, 7500);
 
         if (primaryResult.ok) {
             return res.status(200).json({
@@ -149,26 +159,32 @@ module.exports = async function handler(req, res) {
             });
         }
 
-        // Primary model failed: dynamically fetch modern (> 2.5) models via ListModels
+        // Primary model failed: dynamically fetch modern (> 2.5) flash models via ListModels
         const listResult = await listModernModels(apiKey, primaryModel);
         if (listResult.models.length === 0) {
             return res.status(primaryResult.status).json({
-                error: `${primaryResult.error} (ולא נמצאו מודלים חדשים זמינים ב-ListModels${listResult.error ? `: ${listResult.error}` : ''})`
+                error: `${primaryResult.error} (ולא נמצאו מודלי flash חדשים זמינים ב-ListModels${listResult.error ? `: ${listResult.error}` : ''})`
             });
         }
 
-        const fallbackModel = listResult.models[0];
-        const fallbackResult = await callGeminiModel(fallbackModel, apiKey, requestBody, 4500);
-
-        if (fallbackResult.ok) {
-            return res.status(200).json({
-                reply: fallbackResult.reply,
-                model: fallbackResult.model
-            });
+        let lastResult = primaryResult;
+        for (const fallbackModel of listResult.models) {
+            const remainingMs = deadline - Date.now();
+            if (remainingMs < 1500) {
+                break;
+            }
+            const attemptResult = await callGeminiModel(fallbackModel, apiKey, requestBody, Math.min(remainingMs, 5000));
+            if (attemptResult.ok) {
+                return res.status(200).json({
+                    reply: attemptResult.reply,
+                    model: attemptResult.model
+                });
+            }
+            lastResult = attemptResult;
         }
 
-        return res.status(fallbackResult.status).json({
-            error: `${fallbackResult.error} (ניסיון קודם מול ${primaryModel}: ${primaryResult.error})`
+        return res.status(lastResult.status).json({
+            error: `${lastResult.error} (ניסיון קודם מול ${primaryModel}: ${primaryResult.error})`
         });
     } catch (err) {
         return res.status(500).json({

@@ -122,6 +122,7 @@ async function pipeGeminiSseToClient(geminiRes, model, res) {
     const reader = geminiRes.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+    let latestUsage = null;
 
     try {
         while (true) {
@@ -140,6 +141,9 @@ async function pipeGeminiSseToClient(geminiRes, model, res) {
 
                 try {
                     const chunk = JSON.parse(payloadStr);
+                    if (chunk?.usageMetadata) {
+                        latestUsage = chunk.usageMetadata;
+                    }
                     const text = chunk?.candidates?.[0]?.content?.parts
                         ?.map((part) => part.text || '')
                         .join('');
@@ -152,7 +156,7 @@ async function pipeGeminiSseToClient(geminiRes, model, res) {
             }
         }
 
-        res.write(`data: ${JSON.stringify({ done: true, model })}\n\n`);
+        res.write(`data: ${JSON.stringify({ done: true, model, usage: latestUsage })}\n\n`);
     } catch (err) {
         res.write(`data: ${JSON.stringify({ error: err?.message || 'הזרמת התשובה נקטעה.' })}\n\n`);
     } finally {

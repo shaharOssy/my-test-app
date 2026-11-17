@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 7</title>
+    <title>סימולציה גרסה 8</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -475,6 +475,29 @@
             100% { right: 105%; }
         }
 
+        .token-counter-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--surface-muted);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .message-meta {
+            font-size: 0.76rem;
+            color: var(--text-muted);
+            padding: 0 6px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
         @media (max-width: 600px) {
             .message-row,
             .message-row.assistant {
@@ -488,9 +511,10 @@
         <div class="header-inner">
             <div class="brand">
                 <span class="brand-dot" aria-hidden="true"></span>
-                <h1>סימולציה גרסה 7</h1>
+                <h1>סימולציה גרסה 8</h1>
             </div>
             <nav class="nav-actions" aria-label="ניווט בין דפים">
+                <span class="token-counter-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
                 <a href="landing.html" class="nav-btn">הדף המקורי</a>
                 <a href="tic-tac-toe.html" class="nav-btn">איקס עיגול 🎮</a>
                 <button type="button" class="nav-btn" id="themeToggle" onclick="toggleTheme()" aria-pressed="false">
@@ -541,6 +565,7 @@
 
         const conversation = [];
         let isSending = false;
+        let totalSessionTokens = 0;
         let speedMode = localStorage.getItem('speedMode') || 'fast';
 
         function applySpeedModeUi() {
@@ -825,6 +850,8 @@
                 let buffer = '';
                 let fullReply = '';
                 let streamError = null;
+                let usedModel = null;
+                let replyUsage = null;
 
                 while (true) {
                     const { value, done } = await reader.read();
@@ -856,6 +883,10 @@
                             renderAssistantContent(assistantBubble, fullReply, true);
                             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
                         }
+                        if (payload.done) {
+                            if (payload.model) usedModel = payload.model;
+                            if (payload.usage) replyUsage = payload.usage;
+                        }
                     }
 
                     if (streamError) break;
@@ -872,6 +903,28 @@
                 } else {
                     renderAssistantContent(assistantBubble, fullReply, false);
                     conversation.push({ role: 'assistant', text: fullReply });
+
+                    if (usedModel || replyUsage) {
+                        const meta = document.createElement('div');
+                        meta.className = 'message-meta';
+                        const metaParts = [];
+                        if (usedModel) {
+                            metaParts.push(`מודל: ${usedModel}`);
+                        }
+                        if (replyUsage && typeof replyUsage.totalTokenCount === 'number') {
+                            totalSessionTokens += replyUsage.totalTokenCount;
+                            const pill = document.getElementById('sessionTokensPill');
+                            if (pill) {
+                                pill.textContent = `טוקנים בשיחה: ${totalSessionTokens.toLocaleString('en-US')}`;
+                            }
+                            const inTok = replyUsage.promptTokenCount ?? '?';
+                            const outTok = replyUsage.candidatesTokenCount ?? '?';
+                            metaParts.push(`טוקנים בתשובה: ${replyUsage.totalTokenCount.toLocaleString('en-US')} (קלט: ${inTok}, פלט: ${outTok})`);
+                        }
+                        meta.textContent = metaParts.join(' • ');
+                        assistantRow.appendChild(meta);
+                    }
+
                     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
                 }
             } catch (err) {

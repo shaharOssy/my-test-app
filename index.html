@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 9</title>
+    <title>סימולציה גרסה 10</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -511,7 +511,7 @@
         <div class="header-inner">
             <div class="brand">
                 <span class="brand-dot" aria-hidden="true"></span>
-                <h1>סימולציה גרסה 9</h1>
+                <h1>סימולציה גרסה 10</h1>
             </div>
             <nav class="nav-actions" aria-label="ניווט בין דפים">
                 <span class="token-counter-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
@@ -856,6 +856,8 @@
                 let fullReply = '';
                 let streamError = null;
                 let usedModel = null;
+                let usedSpeedMode = null;
+                let thinkingApplied = null;
                 let replyUsage = null;
 
                 while (true) {
@@ -890,6 +892,8 @@
                         }
                         if (payload.done) {
                             if (payload.model) usedModel = payload.model;
+                            if (payload.speedMode) usedSpeedMode = payload.speedMode;
+                            if (typeof payload.thinkingApplied === 'boolean') thinkingApplied = payload.thinkingApplied;
                             if (payload.usage) replyUsage = payload.usage;
                         }
                     }
@@ -916,6 +920,12 @@
                         if (usedModel) {
                             metaParts.push(`מודל: ${usedModel}`);
                         }
+                        if (usedSpeedMode) {
+                            const modeObj = SPEED_MODES.find((m) => m.id === usedSpeedMode);
+                            const modeLabel = modeObj ? modeObj.label : usedSpeedMode;
+                            const thinkingNote = thinkingApplied === false ? ' (ברירת מחדל של המודל)' : '';
+                            metaParts.push(`מצב: ${modeLabel}${thinkingNote}`);
+                        }
                         if (replyUsage && typeof replyUsage.totalTokenCount === 'number') {
                             totalSessionTokens += replyUsage.totalTokenCount;
                             const pill = document.getElementById('sessionTokensPill');
@@ -924,7 +934,10 @@
                             }
                             const inTok = replyUsage.promptTokenCount ?? '?';
                             const outTok = replyUsage.candidatesTokenCount ?? '?';
-                            metaParts.push(`טוקנים בתשובה: ${replyUsage.totalTokenCount.toLocaleString('en-US')} (קלט: ${inTok}, פלט: ${outTok})`);
+                            const thinkTok = typeof replyUsage.thoughtsTokenCount === 'number' && replyUsage.thoughtsTokenCount > 0
+                                ? `, חשיבה: ${replyUsage.thoughtsTokenCount}`
+                                : '';
+                            metaParts.push(`טוקנים בתשובה: ${replyUsage.totalTokenCount.toLocaleString('en-US')} (קלט: ${inTok}, פלט: ${outTok}${thinkTok})`);
                         }
                         meta.textContent = metaParts.join(' • ');
                         assistantRow.appendChild(meta);

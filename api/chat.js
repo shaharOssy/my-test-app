@@ -112,7 +112,7 @@ async function listModernModels(apiKey, excludeModel) {
     }
 }
 
-async function pipeGeminiSseToClient(geminiRes, model, res) {
+async function pipeGeminiSseToClient(geminiRes, model, res, meta = {}) {
     res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
@@ -156,7 +156,13 @@ async function pipeGeminiSseToClient(geminiRes, model, res) {
             }
         }
 
-        res.write(`data: ${JSON.stringify({ done: true, model, usage: latestUsage })}\n\n`);
+        res.write(`data: ${JSON.stringify({
+            done: true,
+            model,
+            speedMode: meta.speedMode || 'fast',
+            thinkingApplied: Boolean(meta.thinkingApplied),
+            usage: latestUsage
+        })}\n\n`);
     } catch (err) {
         res.write(`data: ${JSON.stringify({ error: err?.message || 'הזרמת התשובה נקטעה.' })}\n\n`);
     } finally {
@@ -226,20 +232,24 @@ module.exports = async function handler(req, res) {
         const tryOpenWithSpeed = async (model, timeoutMs) => {
             const firstTry = await openGeminiStream(model, apiKey, buildRequestBody(true), timeoutMs);
             if (firstTry.ok) {
-                return firstTry;
+                return { ...firstTry, thinkingApplied: true };
             }
             // If this model rejects thinkingConfig (400), retry the SAME model without thinkingConfig
             if (firstTry.status === 400) {
-                return await openGeminiStream(model, apiKey, buildRequestBody(false), timeoutMs);
+                const retry = await openGeminiStream(model, apiKey, buildRequestBody(false), timeoutMs);
+                return { ...retry, thinkingApplied: false };
             }
-            return firstTry;
+            return { ...firstTry, thinkingApplied: false };
         };
 
         const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
         const primaryResult = await tryOpenWithSpeed(primaryModel, 5000);
 
         if (primaryResult.ok) {
-            return await pipeGeminiSseToClient(primaryResult.response, primaryResult.model, res);
+            return await pipeGeminiSseToClient(primaryResult.response, primaryResult.model, res, {
+                speedMode,
+                thinkingApplied: primaryResult.thinkingApplied
+            });
         }
 
         // Primary failed: try gemini-3.1-flash-lite-preview next with the same user mode
@@ -248,7 +258,10 @@ module.exports = async function handler(req, res) {
         if (secondaryModel !== primaryModel) {
             const secondaryResult = await tryOpenWithSpeed(secondaryModel, 4000);
             if (secondaryResult.ok) {
-                return await pipeGeminiSseToClient(secondaryResult.response, secondaryResult.model, res);
+                return await pipeGeminiSseToClient(secondaryResult.response, secondaryResult.model, res, {
+                    speedMode,
+                    thinkingApplied: secondaryResult.thinkingApplied
+                });
             }
             lastResult = secondaryResult;
         }
@@ -260,7 +273,10 @@ module.exports = async function handler(req, res) {
         for (const fallbackModel of remainingModels) {
             const attempt = await tryOpenWithSpeed(fallbackModel, 3500);
             if (attempt.ok) {
-                return await pipeGeminiSseToClient(attempt.response, attempt.model, res);
+                return await pipeGeminiSseToClient(attempt.response, attempt.model, res, {
+                    speedMode,
+                    thinkingApplied: attempt.thinkingApplied
+                });
             }
             lastResult = attempt;
         }

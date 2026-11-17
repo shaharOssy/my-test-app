@@ -8,16 +8,20 @@ const SYSTEM_INSTRUCTION = `אתה עוזר חכם וידידותי בעברית
 3. השתמש בצבעים ברורים ונעימים לעין, קווים חדים (stroke, stroke-width), וטקסט/תוויות ברורות בעברית אם זה עוזר להמחשה.
 4. הסבר בקצרה במשפט או שניים מה ציירת, מעבר לציור עצמו.`;
 
-async function callGeminiModel(model, apiKey, requestBody, timeoutMs) {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+async function openGeminiStream(model, apiKey, requestBody, connectTimeoutMs) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
 
     try {
         const geminiRes = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: requestBody,
-            signal: AbortSignal.timeout(timeoutMs)
+            signal: AbortSignal.timeout(connectTimeoutMs)
         });
+
+        if (geminiRes.ok && geminiRes.body) {
+            return { ok: true, status: 200, response: geminiRes, model };
+        }
 
         const rawText = await geminiRes.text();
         let data = null;
@@ -25,16 +29,6 @@ async function callGeminiModel(model, apiKey, requestBody, timeoutMs) {
             data = rawText ? JSON.parse(rawText) : null;
         } catch {
             data = null;
-        }
-
-        if (geminiRes.ok) {
-            const reply =
-                data?.candidates?.[0]?.content?.parts
-                    ?.map((part) => part.text || '')
-                    .join('\n')
-                    .trim() || 'לא התקבלה תשובה מהמודל.';
-
-            return { ok: true, status: 200, reply, model };
         }
 
         const status = geminiRes.status || 502;
@@ -46,7 +40,7 @@ async function callGeminiModel(model, apiKey, requestBody, timeoutMs) {
             ok: false,
             status: isTimeout ? 504 : 502,
             error: isTimeout
-                ? `המודל ${model} לא הגיב בזמן (${timeoutMs / 1000} שניות).`
+                ? `המודל ${model} לא התחיל להגיב בזמן (${(connectTimeoutMs / 1000).toFixed(1)} שניות).`
                 : (err?.message || `שגיאת תקשורת מול המודל ${model}.`),
             model
         };
@@ -108,6 +102,54 @@ async function listModernModels(apiKey, excludeModel) {
     }
 }
 
+async function pipeGeminiSseToClient(geminiRes, model, res) {
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive'
+    });
+
+    const reader = geminiRes.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    try {
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line.startsWith('data:')) continue;
+                const payloadStr = line.slice(5).trim();
+                if (!payloadStr || payloadStr === '[DONE]') continue;
+
+                try {
+                    const chunk = JSON.parse(payloadStr);
+                    const text = chunk?.candidates?.[0]?.content?.parts
+                        ?.map((part) => part.text || '')
+                        .join('');
+                    if (text) {
+                        res.write(`data: ${JSON.stringify({ text })}\n\n`);
+                    }
+                } catch {
+                    // Ignore partial or non-JSON keepalive lines
+                }
+            }
+        }
+
+        res.write(`data: ${JSON.stringify({ done: true, model })}\n\n`);
+    } catch (err) {
+        res.write(`data: ${JSON.stringify({ error: err?.message || 'הזרמת התשובה נקטעה.' })}\n\n`);
+    } finally {
+        res.end();
+    }
+}
+
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -148,18 +190,14 @@ module.exports = async function handler(req, res) {
             }
         });
 
-        const deadline = Date.now() + 9200;
         const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const primaryResult = await callGeminiModel(primaryModel, apiKey, requestBody, 7500);
+        const primaryResult = await openGeminiStream(primaryModel, apiKey, requestBody, 4500);
 
         if (primaryResult.ok) {
-            return res.status(200).json({
-                reply: primaryResult.reply,
-                model: primaryResult.model
-            });
+            return await pipeGeminiSseToClient(primaryResult.response, primaryResult.model, res);
         }
 
-        // Primary model failed: dynamically fetch modern (> 2.5) flash models via ListModels
+        // Primary model failed to open stream: fetch modern (> 2.5) flash models via ListModels
         const listResult = await listModernModels(apiKey, primaryModel);
         if (listResult.models.length === 0) {
             return res.status(primaryResult.status).json({
@@ -169,18 +207,11 @@ module.exports = async function handler(req, res) {
 
         let lastResult = primaryResult;
         for (const fallbackModel of listResult.models) {
-            const remainingMs = deadline - Date.now();
-            if (remainingMs < 1500) {
-                break;
+            const attempt = await openGeminiStream(fallbackModel, apiKey, requestBody, 3500);
+            if (attempt.ok) {
+                return await pipeGeminiSseToClient(attempt.response, attempt.model, res);
             }
-            const attemptResult = await callGeminiModel(fallbackModel, apiKey, requestBody, Math.min(remainingMs, 5000));
-            if (attemptResult.ok) {
-                return res.status(200).json({
-                    reply: attemptResult.reply,
-                    model: attemptResult.model
-                });
-            }
-            lastResult = attemptResult;
+            lastResult = attempt;
         }
 
         return res.status(lastResult.status).json({

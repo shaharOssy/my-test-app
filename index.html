@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 5</title>
+    <title>סימולציה גרסה 6</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -373,7 +373,7 @@
         <div class="header-inner">
             <div class="brand">
                 <span class="brand-dot" aria-hidden="true"></span>
-                <h1>סימולציה גרסה 5</h1>
+                <h1>סימולציה גרסה 6</h1>
             </div>
             <nav class="nav-actions" aria-label="ניווט בין דפים">
                 <a href="landing.html" class="nav-btn">הדף המקורי</a>
@@ -565,6 +565,42 @@
             return card;
         }
 
+        function renderAssistantContent(bubble, text, isStreaming = false) {
+            bubble.innerHTML = '';
+
+            let displaySource = text;
+            let hasIncompleteSvg = false;
+            if (isStreaming) {
+                const openIdx = text.lastIndexOf('<svg');
+                const closeIdx = text.lastIndexOf('</svg>');
+                if (openIdx !== -1 && openIdx > closeIdx) {
+                    displaySource = text.slice(0, openIdx).trim();
+                    hasIncompleteSvg = true;
+                }
+            }
+
+            if (displaySource) {
+                const parts = extractParts(displaySource);
+                for (const part of parts) {
+                    if (part.type === 'text') {
+                        const p = document.createElement('div');
+                        p.textContent = part.content;
+                        bubble.appendChild(p);
+                    } else if (part.type === 'svg') {
+                        bubble.appendChild(createSvgCard(part.content));
+                    }
+                }
+            }
+
+            if (hasIncompleteSvg) {
+                const drawingNote = document.createElement('div');
+                drawingNote.style.color = 'var(--text-muted)';
+                drawingNote.style.marginTop = '6px';
+                drawingNote.textContent = 'מצייר SVG...';
+                bubble.appendChild(drawingNote);
+            }
+        }
+
         function appendMessage(role, text, isError = false) {
             if (emptyStateEl) {
                 emptyStateEl.style.display = 'none';
@@ -577,16 +613,7 @@
             bubble.className = 'bubble';
 
             if (role === 'assistant' && !isError) {
-                const parts = extractParts(text);
-                for (const part of parts) {
-                    if (part.type === 'text') {
-                        const p = document.createElement('div');
-                        p.textContent = part.content;
-                        bubble.appendChild(p);
-                    } else if (part.type === 'svg') {
-                        bubble.appendChild(createSvgCard(part.content));
-                    }
-                }
+                renderAssistantContent(bubble, text, false);
             } else {
                 bubble.textContent = text;
             }
@@ -610,7 +637,8 @@
             appendMessage('user', text);
             conversation.push({ role: 'user', text });
 
-            const loadingRow = appendMessage('assistant', 'חושב...');
+            const assistantRow = appendMessage('assistant', 'חושב...');
+            const assistantBubble = assistantRow.querySelector('.bubble');
 
             try {
                 const response = await fetch('/api/chat', {
@@ -619,19 +647,78 @@
                     body: JSON.stringify({ messages: conversation })
                 });
 
-                const data = await response.json();
-                loadingRow.remove();
+                const contentType = (response.headers.get('content-type') || '').toLowerCase();
 
-                if (!response.ok) {
-                    appendMessage('assistant', data.error || 'שגיאה בקבלת תשובה מהשרת.', true);
+                if (!response.ok || contentType.includes('application/json')) {
+                    const data = await response.json();
+                    assistantRow.remove();
+                    if (!response.ok || data.error) {
+                        appendMessage('assistant', data.error || 'שגיאה בקבלת תשובה מהשרת.', true);
+                        conversation.pop();
+                    } else {
+                        const reply = data.reply || '';
+                        appendMessage('assistant', reply);
+                        conversation.push({ role: 'assistant', text: reply });
+                    }
+                    return;
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let buffer = '';
+                let fullReply = '';
+                let streamError = null;
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const rawLine of lines) {
+                        const line = rawLine.trim();
+                        if (!line.startsWith('data:')) continue;
+                        const payloadStr = line.slice(5).trim();
+                        if (!payloadStr) continue;
+
+                        let payload;
+                        try {
+                            payload = JSON.parse(payloadStr);
+                        } catch {
+                            continue;
+                        }
+
+                        if (payload.error) {
+                            streamError = payload.error;
+                            break;
+                        }
+                        if (payload.text) {
+                            fullReply += payload.text;
+                            renderAssistantContent(assistantBubble, fullReply, true);
+                            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+                        }
+                    }
+
+                    if (streamError) break;
+                }
+
+                if (streamError) {
+                    assistantRow.remove();
+                    appendMessage('assistant', streamError, true);
+                    conversation.pop();
+                } else if (!fullReply.trim()) {
+                    assistantRow.remove();
+                    appendMessage('assistant', 'לא התקבלה תשובה מהמודל.', true);
                     conversation.pop();
                 } else {
-                    const reply = data.reply || '';
-                    appendMessage('assistant', reply);
-                    conversation.push({ role: 'assistant', text: reply });
+                    renderAssistantContent(assistantBubble, fullReply, false);
+                    conversation.push({ role: 'assistant', text: fullReply });
+                    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
                 }
             } catch (err) {
-                loadingRow.remove();
+                assistantRow.remove();
                 appendMessage('assistant', 'לא ניתן להתחבר לשרת (/api/chat). אם האתר רץ על Vercel, ודא שהקובץ api/chat.js עלה ושמפתח GEMINI_API_KEY מוגדר.', true);
                 conversation.pop();
             } finally {

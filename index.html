@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 19</title>
+    <title>סימולציה גרסה 20</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -693,7 +693,7 @@
         }
 
         .svg-preview {
-            padding: 12px;
+            padding: 10px 14px;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -702,7 +702,7 @@
 
         .svg-preview svg {
             max-width: 100%;
-            max-height: 220px;
+            max-height: 180px;
             height: auto;
             display: block;
         }
@@ -977,7 +977,7 @@
     <!-- Subtle top utility bar preserving version number, token counter, and side pages -->
     <div class="top-utility">
         <div class="top-utility-right">
-            <span>סימולציה גרסה 19</span>
+            <span>סימולציה גרסה 20</span>
             <span class="util-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
         </div>
         <div class="top-utility-links">
@@ -1367,11 +1367,30 @@
             redrawCanvas();
         }
 
+        function cropSvgToContent(svgEl, padding = 14) {
+            if (!svgEl) return;
+            try {
+                const bbox = svgEl.getBBox();
+                if (bbox && bbox.width > 0 && bbox.height > 0) {
+                    const x = bbox.x - padding;
+                    const y = bbox.y - padding;
+                    const w = bbox.width + padding * 2;
+                    const h = bbox.height + padding * 2;
+                    svgEl.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+                    svgEl.removeAttribute('width');
+                    svgEl.removeAttribute('height');
+                }
+            } catch {
+                // Ignore if element is not yet laid out
+            }
+        }
+
         function appendSvgToBoard(cleanSvg) {
             const item = document.createElement('div');
             item.className = 'board-svg-item';
             item.innerHTML = cleanSvg;
             boardSvgLayer.appendChild(item);
+            cropSvgToContent(item.querySelector('svg'), 14);
         }
 
         /* =========================
@@ -1545,6 +1564,7 @@
                             preview.innerHTML = cleanSvg;
                             card.appendChild(preview);
                             bubble.appendChild(card);
+                            cropSvgToContent(preview.querySelector('svg'), 14);
                         }
                     }
                 }

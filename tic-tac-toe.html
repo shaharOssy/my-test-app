@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>איקס עיגול | my-test-app</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --bg-accent: radial-gradient(circle at 20% 10%, rgba(16, 185, 129, 0.12), transparent 45%),
+                         radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.1), transparent 40%);
+            --surface: #ffffff;
+            --surface-muted: #f1f5f9;
+            --text: #0f172a;
+            --text-muted: #475569;
+            --border: #e2e8f0;
+            --primary: #10b981;
+            --primary-hover: #059669;
+            --primary-soft: rgba(16, 185, 129, 0.12);
+            --x-color: #10b981;
+            --o-color: #3b82f6;
+            --win-bg: rgba(16, 185, 129, 0.18);
+            --shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.08);
+            --radius: 20px;
+        }
+
+        body.dark-mode {
+            --bg: #0b1120;
+            --bg-accent: radial-gradient(circle at 20% 10%, rgba(16, 185, 129, 0.16), transparent 45%),
+                         radial-gradient(circle at 80% 20%, rgba(56, 189, 248, 0.12), transparent 40%);
+            --surface: #111827;
+            --surface-muted: #1e293b;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #1e293b;
+            --primary: #34d399;
+            --primary-hover: #10b981;
+            --primary-soft: rgba(52, 211, 153, 0.14);
+            --x-color: #34d399;
+            --o-color: #60a5fa;
+            --win-bg: rgba(52, 211, 153, 0.2);
+            --shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.45);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Heebo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background-color: var(--bg);
+            background-image: var(--bg-accent);
+            background-attachment: fixed;
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            line-height: 1.6;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        header {
+            padding: 20px 0;
+        }
+
+        .nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 1.15rem;
+            text-decoration: none;
+            color: var(--text);
+        }
+
+        .brand-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--primary);
+            box-shadow: 0 0 0 4px var(--primary-soft);
+        }
+
+        .pill-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 9px 15px;
+            border-radius: 999px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            transition: transform 0.15s ease, border-color 0.2s ease, background-color 0.3s ease;
+        }
+
+        .pill-btn:hover {
+            border-color: var(--primary);
+            transform: translateY(-1px);
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 0 48px;
+        }
+
+        .game-card {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px 28px;
+            box-shadow: var(--shadow);
+            text-align: center;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        h1 {
+            font-size: clamp(1.8rem, 4vw, 2.3rem);
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.98rem;
+            margin-bottom: 20px;
+        }
+
+        .mode-switch {
+            display: inline-flex;
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 4px;
+            gap: 4px;
+            margin-bottom: 20px;
+        }
+
+        .mode-btn {
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 9px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .mode-btn.active {
+            background: var(--surface);
+            color: var(--text);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+        }
+
+        .scoreboard {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .score-box {
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 8px;
+        }
+
+        .score-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .score-num {
+            font-size: 1.4rem;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .score-x { color: var(--x-color); }
+        .score-o { color: var(--o-color); }
+
+        .status-banner {
+            font-size: 1.08rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+            min-height: 28px;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            max-width: 330px;
+            margin: 0 auto 24px;
+            direction: ltr;
+        }
+
+        .cell {
+            aspect-ratio: 1;
+            background: var(--surface-muted);
+            border: 2px solid var(--border);
+            border-radius: 16px;
+            font-family: inherit;
+            font-size: 2.6rem;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.12s ease, border-color 0.2s ease, background-color 0.2s ease;
+        }
+
+        .cell:hover:not(:disabled) {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .cell:disabled {
+            cursor: default;
+        }
+
+        .cell.x { color: var(--x-color); }
+        .cell.o { color: var(--o-color); }
+
+        .cell.win {
+            background: var(--win-bg);
+            border-color: var(--primary);
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            font-family: inherit;
+            font-size: 0.98rem;
+            font-weight: 600;
+            padding: 11px 22px;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: transform 0.12s ease, background-color 0.2s ease, border-color 0.2s ease;
+        }
+
+        .btn:active {
+            transform: scale(0.97);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: #ffffff;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: var(--surface-muted);
+            color: var(--text);
+            border-color: var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+        }
+
+        footer {
+            padding: 20px 0 28px;
+            text-align: center;
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container nav">
+            <a href="index.html" class="brand">
+                <span class="brand-dot" aria-hidden="true"></span>
+                <span>my-test-app</span>
+            </a>
+            <div class="nav-actions">
+                <a href="index.html" class="pill-btn">← חזרה לדף הבית</a>
+                <button
+                    type="button"
+                    class="pill-btn"
+                    id="themeToggle"
+                    onclick="toggleTheme()"
+                    aria-pressed="false"
+                >
+                    <span id="themeIcon" aria-hidden="true">🌙</span>
+                    <span id="themeText">מצב לילה</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="game-card" aria-label="משחק איקס עיגול">
+            <h1>איקס עיגול 🎮</h1>
+            <p class="subtitle">בחרו מצב משחק ונסו ליצור רצף של 3 סימנים</p>
+
+            <div class="mode-switch" role="group" aria-label="מצב משחק">
+                <button type="button" class="mode-btn active" id="modePvp" onclick="setMode('pvp')">
+                    שני שחקנים
+                </button>
+                <button type="button" class="mode-btn" id="modeAi" onclick="setMode('ai')">
+                    נגד המחשב
+                </button>
+            </div>
+
+            <div class="scoreboard">
+                <div class="score-box">
+                    <div class="score-label">שחקן X</div>
+                    <div class="score-num score-x" id="scoreX">0</div>
+                </div>
+                <div class="score-box">
+                    <div class="score-label">תיקו</div>
+                    <div class="score-num" id="scoreDraw">0</div>
+                </div>
+                <div class="score-box">
+                    <div class="score-label" id="labelO">שחקן O</div>
+                    <div class="score-num score-o" id="scoreO">0</div>
+                </div>
+            </div>
+
+            <div class="status-banner" id="status" aria-live="polite">תור של: X</div>
+
+            <div class="board" id="board" role="grid" aria-label="לוח המשחק"></div>
+
+            <div class="controls">
+                <button type="button" class="btn btn-primary" onclick="resetGame()">משחק חדש</button>
+                <button type="button" class="btn btn-secondary" onclick="resetScores()">איפוס ניקוד</button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <strong>my-test-app</strong> · משחק איקס עיגול
+        </div>
+    </footer>
+
+    <script>
+        const WIN_LINES = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8],
+            [0, 3, 6], [1, 4, 7], [2, 5, 8],
+            [0, 4, 8], [2, 4, 6]
+        ];
+
+        let board = Array(9).fill('');
+        let currentPlayer = 'X';
+        let gameOver = false;
+        let mode = 'pvp';
+        let scores = { X: 0, O: 0, draw: 0 };
+
+        const boardEl = document.getElementById('board');
+        const statusEl = document.getElementById('status');
+        const scoreXEl = document.getElementById('scoreX');
+        const scoreOEl = document.getElementById('scoreO');
+        const scoreDrawEl = document.getElementById('scoreDraw');
+        const labelOEl = document.getElementById('labelO');
+        const themeToggle = document.getElementById('themeToggle');
+        const themeIcon = document.getElementById('themeIcon');
+        const themeText = document.getElementById('themeText');
+
+        function renderBoard(winLine = []) {
+            boardEl.innerHTML = '';
+            board.forEach((val, idx) => {
+                const cell = document.createElement('button');
+                cell.type = 'button';
+                cell.className = 'cell';
+                if (val === 'X') cell.classList.add('x');
+                if (val === 'O') cell.classList.add('o');
+                if (winLine.includes(idx)) cell.classList.add('win');
+                cell.textContent = val;
+                cell.disabled = Boolean(val) || gameOver || (mode === 'ai' && currentPlayer === 'O');
+                cell.setAttribute('aria-label', `תא ${idx + 1}${val ? ': ' + val : ''}`);
+                cell.onclick = () => makeMove(idx);
+                boardEl.appendChild(cell);
+            });
+        }
+
+        function checkWinner() {
+            for (const line of WIN_LINES) {
+                const [a, b, c] = line;
+                if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                    return { winner: board[a], line };
+                }
+            }
+            if (board.every(Boolean)) {
+                return { winner: 'draw', line: [] };
+            }
+            return null;
+        }
+
+        function updateScores() {
+            scoreXEl.textContent = scores.X;
+            scoreOEl.textContent = scores.O;
+            scoreDrawEl.textContent = scores.draw;
+        }
+
+        function finishIfEnded() {
+            const result = checkWinner();
+            if (!result) return false;
+
+            gameOver = true;
+            if (result.winner === 'draw') {
+                scores.draw++;
+                statusEl.textContent = 'תיקו! נסו שוב 🤝';
+            } else {
+                scores[result.winner]++;
+                const winnerName = mode === 'ai' && result.winner === 'O' ? 'המחשב (O)' : `שחקן ${result.winner}`;
+                statusEl.textContent = `ניצחון ל-${winnerName}! 🎉`;
+            }
+            updateScores();
+            renderBoard(result.line);
+            return true;
+        }
+
+        function makeMove(index) {
+            if (board[index] || gameOver) return;
+            board[index] = currentPlayer;
+
+            if (finishIfEnded()) return;
+
+            currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+            statusEl.textContent = mode === 'ai' && currentPlayer === 'O'
+                ? 'המחשב חושב...'
+                : `תור של: ${currentPlayer}`;
+            renderBoard();
+
+            if (mode === 'ai' && currentPlayer === 'O') {
+                setTimeout(aiMove, 320);
+            }
+        }
+
+        function findBestMoveFor(player) {
+            for (const [a, b, c] of WIN_LINES) {
+                const cells = [board[a], board[b], board[c]];
+                if (cells.filter(v => v === player).length === 2 && cells.includes('')) {
+                    return [a, b, c][cells.indexOf('')];
+                }
+            }
+            return -1;
+        }
+
+        function aiMove() {
+            if (gameOver) return;
+            let move = findBestMoveFor('O');
+            if (move === -1) move = findBestMoveFor('X');
+            if (move === -1 && !board[4]) move = 4;
+            if (move === -1) {
+                const open = board.map((v, i) => (v === '' ? i : -1)).filter(i => i !== -1);
+                move = open[Math.floor(Math.random() * open.length)];
+            }
+            if (move !== undefined && move !== -1) {
+                makeMove(move);
+            }
+        }
+
+        function resetGame() {
+            board = Array(9).fill('');
+            currentPlayer = 'X';
+            gameOver = false;
+            statusEl.textContent = 'תור של: X';
+            renderBoard();
+        }
+
+        function resetScores() {
+            scores = { X: 0, O: 0, draw: 0 };
+            updateScores();
+            resetGame();
+        }
+
+        function setMode(nextMode) {
+            mode = nextMode;
+            document.getElementById('modePvp').classList.toggle('active', mode === 'pvp');
+            document.getElementById('modeAi').classList.toggle('active', mode === 'ai');
+            labelOEl.textContent = mode === 'ai' ? 'מחשב (O)' : 'שחקן O';
+            resetScores();
+        }
+
+        function applyTheme(isDark) {
+            document.body.classList.toggle('dark-mode', isDark);
+            themeToggle.setAttribute('aria-pressed', String(isDark));
+            themeIcon.textContent = isDark ? '☀️' : '🌙';
+            themeText.textContent = isDark ? 'מצב יום' : 'מצב לילה';
+        }
+
+        function toggleTheme() {
+            const isDark = !document.body.classList.contains('dark-mode');
+            applyTheme(isDark);
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        }
+
+        (function init() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            applyTheme(saved ? saved === 'dark' : prefersDark);
+            renderBoard();
+        })();
+    </script>
+</body>
+</html>

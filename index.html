@@ -180,6 +180,34 @@
             gap: 6px;
         }
 
+        .hero-cta {
+            margin-bottom: 24px;
+        }
+
+        .cta-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--primary);
+            color: #ffffff;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.02rem;
+            padding: 13px 24px;
+            border-radius: 12px;
+            box-shadow: 0 10px 24px -8px rgba(16, 185, 129, 0.45);
+            transition: transform 0.15s ease, background-color 0.2s ease;
+        }
+
+        .cta-btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+        }
+
+        .cta-btn:active {
+            transform: translateY(0);
+        }
+
         /* Interactive Counter Card */
         .counter-card {
             background: var(--surface);
@@ -349,6 +377,9 @@
                 <p class="hero-subtitle">
                     ממשק מינימליסטי עם תמיכה מלאה מימין לשמאל, מעבר חלק בין מצב יום למצב לילה ומונה לחיצות אינטראקטיבי בזמן אמת.
                 </p>
+                <div class="hero-cta">
+                    <a href="tic-tac-toe.html" class="cta-btn">איקס עיגול 🎮</a>
+                </div>
                 <div class="hero-highlights">
                     <span>✓ עיצוב רספונסיבי</span>
                     <span>✓ מצב יום / לילה</span>

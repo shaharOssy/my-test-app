@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 18</title>
+    <title>סימולציה גרסה 19</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -395,24 +395,37 @@
             font-weight: 700;
         }
 
-        /* AI SVG layer on the board */
+        /* AI SVG cumulative layer on the board */
         .board-svg-layer {
             position: absolute;
             inset: 0;
             pointer-events: none;
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
+            align-content: center;
             justify-content: center;
-            padding: 64px 28px 64px;
+            gap: 14px;
+            padding: 64px 20px 64px;
             z-index: 2;
+            overflow: hidden;
         }
 
-        .board-svg-layer svg {
-            max-width: 92%;
-            max-height: 88%;
+        .board-svg-item {
+            flex: 1 1 180px;
+            max-width: 280px;
+            max-height: 240px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .board-svg-item svg {
+            max-width: 100%;
+            max-height: 220px;
             width: auto;
             height: auto;
-            filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.06));
+            filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.06));
         }
 
         /* User interactive drawing canvas */
@@ -964,7 +977,7 @@
     <!-- Subtle top utility bar preserving version number, token counter, and side pages -->
     <div class="top-utility">
         <div class="top-utility-right">
-            <span>סימולציה גרסה 18</span>
+            <span>סימולציה גרסה 19</span>
             <span class="util-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
         </div>
         <div class="top-utility-links">
@@ -1354,8 +1367,11 @@
             redrawCanvas();
         }
 
-        function renderSvgOnBoard(cleanSvg) {
-            boardSvgLayer.innerHTML = cleanSvg;
+        function appendSvgToBoard(cleanSvg) {
+            const item = document.createElement('div');
+            item.className = 'board-svg-item';
+            item.innerHTML = cleanSvg;
+            boardSvgLayer.appendChild(item);
         }
 
         /* =========================
@@ -1487,6 +1503,9 @@
                 }
             }
 
+            const shouldAddToBoard = !isStreaming && !bubble.dataset.boardAdded;
+            let addedAnyToBoard = false;
+
             if (displaySource) {
                 const parts = extractParts(displaySource);
                 for (const part of parts) {
@@ -1508,15 +1527,18 @@
                     } else if (part.type === 'svg') {
                         const cleanSvg = sanitizeSvg(part.content);
                         if (cleanSvg) {
-                            // 1. Render on the central Whiteboard ("הלוח")
-                            renderSvgOnBoard(cleanSvg);
+                            // 1. Append cumulatively to the Whiteboard ("הלוח") once per message
+                            if (shouldAddToBoard) {
+                                appendSvgToBoard(cleanSvg);
+                                addedAnyToBoard = true;
+                            }
 
-                            // 2. Also render inside the chat message bubble
+                            // 2. Also render this new part inside the chat message bubble
                             const card = document.createElement('div');
                             card.className = 'svg-card';
                             card.dataset.cleanSvg = cleanSvg;
-                            card.title = 'לחץ להצגה מחדש על הלוח';
-                            card.onclick = () => renderSvgOnBoard(cleanSvg);
+                            card.title = 'לחץ להוספה חוזרת ללוח';
+                            card.onclick = () => appendSvgToBoard(cleanSvg);
 
                             const preview = document.createElement('div');
                             preview.className = 'svg-preview';
@@ -1526,6 +1548,10 @@
                         }
                     }
                 }
+            }
+
+            if (addedAnyToBoard) {
+                bubble.dataset.boardAdded = '1';
             }
 
             if (hasIncompleteSvg) {

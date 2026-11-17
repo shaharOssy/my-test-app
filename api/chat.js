@@ -8,6 +8,97 @@ const SYSTEM_INSTRUCTION = `אתה עוזר חכם וידידותי בעברית
 3. השתמש בצבעים ברורים ונעימים לעין, קווים חדים (stroke, stroke-width), וטקסט/תוויות ברורות בעברית אם זה עוזר להמחשה.
 4. הסבר בקצרה במשפט או שניים מה ציירת, מעבר לציור עצמו.`;
 
+async function callGeminiModel(model, apiKey, requestBody, timeoutMs) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    try {
+        const geminiRes = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: requestBody,
+            signal: AbortSignal.timeout(timeoutMs)
+        });
+
+        const rawText = await geminiRes.text();
+        let data = null;
+        try {
+            data = rawText ? JSON.parse(rawText) : null;
+        } catch {
+            data = null;
+        }
+
+        if (geminiRes.ok) {
+            const reply =
+                data?.candidates?.[0]?.content?.parts
+                    ?.map((part) => part.text || '')
+                    .join('\n')
+                    .trim() || 'לא התקבלה תשובה מהמודל.';
+
+            return { ok: true, status: 200, reply, model };
+        }
+
+        const status = geminiRes.status || 502;
+        const error = data?.error?.message || `המודל ${model} החזיר שגיאה (${status}).`;
+        return { ok: false, status, error, model };
+    } catch (err) {
+        const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+        return {
+            ok: false,
+            status: isTimeout ? 504 : 502,
+            error: isTimeout
+                ? `המודל ${model} לא הגיב בזמן (${timeoutMs / 1000} שניות).`
+                : (err?.message || `שגיאת תקשורת מול המודל ${model}.`),
+            model
+        };
+    }
+}
+
+function getModernGeminiVersion(modelId) {
+    const match = modelId.match(/^gemini-(\d+(?:\.\d+)?)/i);
+    if (!match) return null;
+    const version = parseFloat(match[1]);
+    return Number.isFinite(version) && version > 2.5 ? version : null;
+}
+
+async function listModernModels(apiKey, excludeModel) {
+    const listEndpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+
+    try {
+        const res = await fetch(listEndpoint, {
+            method: 'GET',
+            signal: AbortSignal.timeout(3000)
+        });
+
+        const rawText = await res.text();
+        const data = rawText ? JSON.parse(rawText) : null;
+        if (!res.ok || !Array.isArray(data?.models)) {
+            return { models: [], error: data?.error?.message || `ListModels החזיר שגיאה (${res.status}).` };
+        }
+
+        const candidates = data.models
+            .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+            .map((m) => (m.name || '').replace(/^models\//, ''))
+            .filter((id) => {
+                if (!id || id === excludeModel) return false;
+                const version = getModernGeminiVersion(id);
+                if (version === null) return false;
+                const lower = id.toLowerCase();
+                return !lower.includes('tts') && !lower.includes('image') && !lower.includes('robotics');
+            })
+            .sort((a, b) => {
+                const verDiff = (getModernGeminiVersion(b) || 0) - (getModernGeminiVersion(a) || 0);
+                if (verDiff !== 0) return verDiff;
+                const aFlash = a.toLowerCase().includes('flash') ? 1 : 0;
+                const bFlash = b.toLowerCase().includes('flash') ? 1 : 0;
+                return bFlash - aFlash;
+            });
+
+        return { models: candidates, error: null };
+    } catch (err) {
+        return { models: [], error: err?.message || 'שגיאה בשליפת רשימת המודלים (ListModels).' };
+    }
+}
+
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -38,12 +129,6 @@ module.exports = async function handler(req, res) {
                 parts: [{ text: msg.text }]
             }));
 
-        const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const fallbackModels = [
-            primaryModel,
-            'gemini-3.8-flash-lite'
-        ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
-
         const requestBody = JSON.stringify({
             systemInstruction: {
                 parts: [{ text: SYSTEM_INSTRUCTION }]
@@ -54,52 +139,37 @@ module.exports = async function handler(req, res) {
             }
         });
 
-        let lastStatus = 500;
-        let lastError = 'שגיאה בפנייה למודל ה-AI.';
+        const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+        const primaryResult = await callGeminiModel(primaryModel, apiKey, requestBody, 4000);
 
-        for (let i = 0; i < fallbackModels.length; i++) {
-            const model = fallbackModels[i];
-            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-            const timeoutMs = i === 0 ? 4000 : 5000;
-
-            try {
-                const geminiRes = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: requestBody,
-                    signal: AbortSignal.timeout(timeoutMs)
-                });
-
-                const rawText = await geminiRes.text();
-                let data = null;
-                try {
-                    data = rawText ? JSON.parse(rawText) : null;
-                } catch {
-                    data = null;
-                }
-
-                if (geminiRes.ok) {
-                    const reply =
-                        data?.candidates?.[0]?.content?.parts
-                            ?.map((part) => part.text || '')
-                            .join('\n')
-                            .trim() || 'לא התקבלה תשובה מהמודל.';
-
-                    return res.status(200).json({ reply, model });
-                }
-
-                lastStatus = geminiRes.status || 502;
-                lastError = data?.error?.message || `המודל ${model} החזיר שגיאה (${lastStatus}).`;
-            } catch (err) {
-                const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
-                lastStatus = isTimeout ? 504 : 502;
-                lastError = isTimeout
-                    ? `המודל ${model} לא הגיב בזמן (${timeoutMs / 1000} שניות).`
-                    : (err?.message || `שגיאת תקשורת מול המודל ${model}.`);
-            }
+        if (primaryResult.ok) {
+            return res.status(200).json({
+                reply: primaryResult.reply,
+                model: primaryResult.model
+            });
         }
 
-        return res.status(lastStatus).json({ error: lastError });
+        // Primary model failed: dynamically fetch modern (> 2.5) models via ListModels
+        const listResult = await listModernModels(apiKey, primaryModel);
+        if (listResult.models.length === 0) {
+            return res.status(primaryResult.status).json({
+                error: `${primaryResult.error} (ולא נמצאו מודלים חדשים זמינים ב-ListModels${listResult.error ? `: ${listResult.error}` : ''})`
+            });
+        }
+
+        const fallbackModel = listResult.models[0];
+        const fallbackResult = await callGeminiModel(fallbackModel, apiKey, requestBody, 4500);
+
+        if (fallbackResult.ok) {
+            return res.status(200).json({
+                reply: fallbackResult.reply,
+                model: fallbackResult.model
+            });
+        }
+
+        return res.status(fallbackResult.status).json({
+            error: `${fallbackResult.error} (ניסיון קודם מול ${primaryModel}: ${primaryResult.error})`
+        });
     } catch (err) {
         return res.status(500).json({
             error: 'אירעה שגיאה בשרת בעת עיבוד הבקשה.',

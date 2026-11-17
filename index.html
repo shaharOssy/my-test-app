@@ -3,10 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 14</title>
+    <title>סימולציה גרסה 15</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
     <style>
         :root {
             --bg: #f8fafc;
@@ -515,6 +518,18 @@
             color: var(--primary);
         }
 
+        .katex,
+        .katex-display {
+            direction: ltr;
+            unicode-bidi: isolate;
+        }
+
+        .katex-display {
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 4px 0;
+        }
+
         @media (max-width: 600px) {
             .message-row,
             .message-row.assistant {
@@ -528,7 +543,7 @@
         <div class="header-inner">
             <div class="brand">
                 <span class="brand-dot" aria-hidden="true"></span>
-                <h1>סימולציה גרסה 14</h1>
+                <h1>סימולציה גרסה 15</h1>
             </div>
             <nav class="nav-actions" aria-label="ניווט בין דפים">
                 <span class="token-counter-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
@@ -735,6 +750,17 @@
                     if (part.type === 'text') {
                         const p = document.createElement('div');
                         p.textContent = part.content;
+                        if (typeof renderMathInElement === 'function') {
+                            renderMathInElement(p, {
+                                delimiters: [
+                                    { left: '$$', right: '$$', display: true },
+                                    { left: '\\[', right: '\\]', display: true },
+                                    { left: '$', right: '$', display: false },
+                                    { left: '\\(', right: '\\)', display: false }
+                                ],
+                                throwOnError: false
+                            });
+                        }
                         bubble.appendChild(p);
                     } else if (part.type === 'svg') {
                         bubble.appendChild(createSvgCard(part.content));

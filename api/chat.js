@@ -10,14 +10,18 @@ const SYSTEM_INSTRUCTION = `אתה עוזר חכם וידידותי בעברית
 
 async function openGeminiStream(model, apiKey, requestBody, connectTimeoutMs) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('CONNECT_TIMEOUT')), connectTimeoutMs);
 
     try {
         const geminiRes = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: requestBody,
-            signal: AbortSignal.timeout(connectTimeoutMs)
+            signal: controller.signal
         });
+        // Cancel connection timeout once response headers arrive so active streaming is never aborted mid-reply
+        clearTimeout(timer);
 
         if (geminiRes.ok && geminiRes.body) {
             return { ok: true, status: 200, response: geminiRes, model };
@@ -35,7 +39,8 @@ async function openGeminiStream(model, apiKey, requestBody, connectTimeoutMs) {
         const error = data?.error?.message || `המודל ${model} החזיר שגיאה (${status}).`;
         return { ok: false, status, error, model };
     } catch (err) {
-        const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+        clearTimeout(timer);
+        const isTimeout = err?.message === 'CONNECT_TIMEOUT' || err?.name === 'TimeoutError' || err?.name === 'AbortError';
         return {
             ok: false,
             status: isTimeout ? 504 : 502,

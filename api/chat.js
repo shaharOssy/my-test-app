@@ -247,8 +247,10 @@ module.exports = async function handler(req, res) {
             return { ...firstTry, thinkingApplied: false };
         };
 
+        const deadline = Date.now() + 9200;
+        const primaryTimeoutMs = speedMode === 'accurate' ? 8000 : 6500;
         const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-        const primaryResult = await tryOpenWithSpeed(primaryModel, 5000);
+        const primaryResult = await tryOpenWithSpeed(primaryModel, primaryTimeoutMs);
 
         if (primaryResult.ok) {
             return await pipeGeminiSseToClient(primaryResult.response, primaryResult.model, res, {
@@ -257,11 +259,12 @@ module.exports = async function handler(req, res) {
             });
         }
 
-        // Primary failed: try gemini-3.1-flash-lite-preview next with the same user mode
+        // Primary failed: try gemini-3.1-flash-lite-preview next with remaining time budget
         const secondaryModel = 'gemini-3.1-flash-lite-preview';
         let lastResult = primaryResult;
-        if (secondaryModel !== primaryModel) {
-            const secondaryResult = await tryOpenWithSpeed(secondaryModel, 4000);
+        const remainingForSecondary = deadline - Date.now();
+        if (secondaryModel !== primaryModel && remainingForSecondary >= 2000) {
+            const secondaryResult = await tryOpenWithSpeed(secondaryModel, Math.min(remainingForSecondary, 4500));
             if (secondaryResult.ok) {
                 return await pipeGeminiSseToClient(secondaryResult.response, secondaryResult.model, res, {
                     speedMode,
@@ -271,19 +274,23 @@ module.exports = async function handler(req, res) {
             lastResult = secondaryResult;
         }
 
-        // Last resort: fetch remaining modern (> 2.5) flash models via ListModels
-        const listResult = await listModernModels(apiKey, primaryModel);
-        const remainingModels = listResult.models.filter((m) => m !== secondaryModel);
+        // Last resort: fetch remaining modern (> 2.5) flash models via ListModels if time remains
+        if (deadline - Date.now() >= 2500) {
+            const listResult = await listModernModels(apiKey, primaryModel);
+            const remainingModels = listResult.models.filter((m) => m !== secondaryModel);
 
-        for (const fallbackModel of remainingModels) {
-            const attempt = await tryOpenWithSpeed(fallbackModel, 3500);
-            if (attempt.ok) {
-                return await pipeGeminiSseToClient(attempt.response, attempt.model, res, {
-                    speedMode,
-                    thinkingApplied: attempt.thinkingApplied
-                });
+            for (const fallbackModel of remainingModels) {
+                const remainingMs = deadline - Date.now();
+                if (remainingMs < 2000) break;
+                const attempt = await tryOpenWithSpeed(fallbackModel, Math.min(remainingMs, 3500));
+                if (attempt.ok) {
+                    return await pipeGeminiSseToClient(attempt.response, attempt.model, res, {
+                        speedMode,
+                        thinkingApplied: attempt.thinkingApplied
+                    });
+                }
+                lastResult = attempt;
             }
-            lastResult = attempt;
         }
 
         return res.status(lastResult.status).json({

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 10</title>
+    <title>סימולציה גרסה 11</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -489,13 +489,30 @@
         }
 
         .message-meta {
-            font-size: 0.76rem;
+            font-size: 0.7rem;
             color: var(--text-muted);
+            opacity: 0.8;
             padding: 0 6px;
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
+            gap: 6px 10px;
             align-items: center;
+        }
+
+        .meta-link-btn {
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-decoration: underline;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .meta-link-btn:hover {
+            color: var(--primary);
         }
 
         @media (max-width: 600px) {
@@ -511,7 +528,7 @@
         <div class="header-inner">
             <div class="brand">
                 <span class="brand-dot" aria-hidden="true"></span>
-                <h1>סימולציה גרסה 10</h1>
+                <h1>סימולציה גרסה 11</h1>
             </div>
             <nav class="nav-actions" aria-label="ניווט בין דפים">
                 <span class="token-counter-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
@@ -688,51 +705,13 @@
 
             const card = document.createElement('div');
             card.className = 'svg-card';
+            card.dataset.cleanSvg = cleanSvg;
 
             const preview = document.createElement('div');
             preview.className = 'svg-preview';
             preview.innerHTML = cleanSvg;
 
-            const toolbar = document.createElement('div');
-            toolbar.className = 'svg-toolbar';
-
-            const label = document.createElement('span');
-            label.className = 'svg-label';
-            label.textContent = 'תצוגת SVG';
-
-            const actions = document.createElement('div');
-            actions.className = 'svg-actions';
-
-            const codeBox = document.createElement('pre');
-            codeBox.className = 'svg-code';
-            codeBox.textContent = cleanSvg;
-
-            const toggleCodeBtn = document.createElement('button');
-            toggleCodeBtn.type = 'button';
-            toggleCodeBtn.className = 'mini-btn';
-            toggleCodeBtn.textContent = 'הצג קוד';
-            toggleCodeBtn.onclick = () => {
-                const isOpen = codeBox.classList.toggle('open');
-                toggleCodeBtn.textContent = isOpen ? 'הסתר קוד' : 'הצג קוד';
-            };
-
-            const downloadBtn = document.createElement('button');
-            downloadBtn.type = 'button';
-            downloadBtn.className = 'mini-btn';
-            downloadBtn.textContent = 'הורד SVG';
-            downloadBtn.onclick = () => {
-                const blob = new Blob([cleanSvg], { type: 'image/svg+xml;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'simulation-drawing.svg';
-                a.click();
-                URL.revokeObjectURL(url);
-            };
-
-            actions.append(toggleCodeBtn, downloadBtn);
-            toolbar.append(label, actions);
-            card.append(preview, toolbar, codeBox);
+            card.appendChild(preview);
             return card;
         }
 
@@ -913,7 +892,10 @@
                     renderAssistantContent(assistantBubble, fullReply, false);
                     conversation.push({ role: 'assistant', text: fullReply });
 
-                    if (usedModel || replyUsage) {
+                    const svgCards = [...assistantBubble.querySelectorAll('.svg-card')];
+                    const cleanSvgs = svgCards.map((c) => c.dataset.cleanSvg).filter(Boolean);
+
+                    if (usedModel || replyUsage || cleanSvgs.length > 0) {
                         const meta = document.createElement('div');
                         meta.className = 'message-meta';
                         const metaParts = [];
@@ -937,10 +919,47 @@
                             const thinkTok = typeof replyUsage.thoughtsTokenCount === 'number' && replyUsage.thoughtsTokenCount > 0
                                 ? `, חשיבה: ${replyUsage.thoughtsTokenCount}`
                                 : '';
-                            metaParts.push(`טוקנים בתשובה: ${replyUsage.totalTokenCount.toLocaleString('en-US')} (קלט: ${inTok}, פלט: ${outTok}${thinkTok})`);
+                            metaParts.push(`טוקנים: ${replyUsage.totalTokenCount.toLocaleString('en-US')} (קלט: ${inTok}, פלט: ${outTok}${thinkTok})`);
                         }
-                        meta.textContent = metaParts.join(' • ');
+
+                        const textSpan = document.createElement('span');
+                        textSpan.textContent = metaParts.join(' • ');
+                        meta.appendChild(textSpan);
                         assistantRow.appendChild(meta);
+
+                        if (cleanSvgs.length > 0) {
+                            const combinedSvgCode = cleanSvgs.join('\n\n');
+                            const codeBox = document.createElement('pre');
+                            codeBox.className = 'svg-code';
+                            codeBox.style.borderRadius = '10px';
+                            codeBox.textContent = combinedSvgCode;
+
+                            const toggleCodeBtn = document.createElement('button');
+                            toggleCodeBtn.type = 'button';
+                            toggleCodeBtn.className = 'meta-link-btn';
+                            toggleCodeBtn.textContent = 'קוד SVG';
+                            toggleCodeBtn.onclick = () => {
+                                const isOpen = codeBox.classList.toggle('open');
+                                toggleCodeBtn.textContent = isOpen ? 'הסתר קוד' : 'קוד SVG';
+                            };
+
+                            const downloadBtn = document.createElement('button');
+                            downloadBtn.type = 'button';
+                            downloadBtn.className = 'meta-link-btn';
+                            downloadBtn.textContent = 'הורד SVG';
+                            downloadBtn.onclick = () => {
+                                const blob = new Blob([cleanSvgs[0]], { type: 'image/svg+xml;charset=utf-8' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'simulation-drawing.svg';
+                                a.click();
+                                URL.revokeObjectURL(url);
+                            };
+
+                            meta.append(toggleCodeBtn, downloadBtn);
+                            assistantRow.appendChild(codeBox);
+                        }
                     }
 
                     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;

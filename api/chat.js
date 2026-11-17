@@ -194,49 +194,70 @@ module.exports = async function handler(req, res) {
                 parts: [{ text: msg.text }]
             }));
 
-        const speedMode = body.speedMode === 'accurate' ? 'accurate' : 'fast';
+        const SPEED_CONFIGS = {
+            fast: {
+                thinkingBudget: 0,
+                instruction: 'מצב תגובה: מהיר — ענה בקצרה, בצורה תמציתית, ישירה וממוקדת.'
+            },
+            balanced: {
+                thinkingBudget: 1024,
+                instruction: 'מצב תגובה: בינוני — ענה בצורה מאוזנת, ברורה ומסודרת.'
+            },
+            accurate: {
+                thinkingBudget: 8192,
+                instruction: 'מצב תגובה: מדויק — חשוב לעומק ותן תשובה מקיפה, מדויקת ומפורטת.'
+            }
+        };
 
-        const buildRequestBody = (disableThinking) => JSON.stringify({
+        const speedMode = SPEED_CONFIGS[body.speedMode] ? body.speedMode : 'fast';
+        const speedCfg = SPEED_CONFIGS[speedMode];
+
+        const buildRequestBody = (includeThinkingConfig) => JSON.stringify({
             systemInstruction: {
-                parts: [{ text: SYSTEM_INSTRUCTION }]
+                parts: [{ text: `${SYSTEM_INSTRUCTION}\n\n${speedCfg.instruction}` }]
             },
             contents,
             generationConfig: {
                 temperature: 0.7,
-                ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {})
+                ...(includeThinkingConfig ? { thinkingConfig: { thinkingBudget: speedCfg.thinkingBudget } } : {})
             }
         });
 
         const tryOpenWithSpeed = async (model, timeoutMs) => {
-            const preferNoThinking = speedMode === 'fast';
-            const firstTry = await openGeminiStream(model, apiKey, buildRequestBody(preferNoThinking), timeoutMs);
-            if (firstTry.ok || !preferNoThinking) {
+            const firstTry = await openGeminiStream(model, apiKey, buildRequestBody(true), timeoutMs);
+            if (firstTry.ok) {
                 return firstTry;
             }
-            const errLower = (firstTry.error || '').toLowerCase();
-            if (firstTry.status === 400 && errLower.includes('thinking')) {
+            // If this model rejects thinkingConfig (400), retry the SAME model without thinkingConfig
+            if (firstTry.status === 400) {
                 return await openGeminiStream(model, apiKey, buildRequestBody(false), timeoutMs);
             }
             return firstTry;
         };
 
-        const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const primaryResult = await tryOpenWithSpeed(primaryModel, 4500);
+        const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+        const primaryResult = await tryOpenWithSpeed(primaryModel, 5000);
 
         if (primaryResult.ok) {
             return await pipeGeminiSseToClient(primaryResult.response, primaryResult.model, res);
         }
 
-        // Primary model failed to open stream: fetch modern (> 2.5) flash models via ListModels
-        const listResult = await listModernModels(apiKey, primaryModel);
-        if (listResult.models.length === 0) {
-            return res.status(primaryResult.status).json({
-                error: `${primaryResult.error} (ולא נמצאו מודלי flash חדשים זמינים ב-ListModels${listResult.error ? `: ${listResult.error}` : ''})`
-            });
+        // Primary failed: try gemini-3.1-flash-lite-preview next with the same user mode
+        const secondaryModel = 'gemini-3.1-flash-lite-preview';
+        let lastResult = primaryResult;
+        if (secondaryModel !== primaryModel) {
+            const secondaryResult = await tryOpenWithSpeed(secondaryModel, 4000);
+            if (secondaryResult.ok) {
+                return await pipeGeminiSseToClient(secondaryResult.response, secondaryResult.model, res);
+            }
+            lastResult = secondaryResult;
         }
 
-        let lastResult = primaryResult;
-        for (const fallbackModel of listResult.models) {
+        // Last resort: fetch remaining modern (> 2.5) flash models via ListModels
+        const listResult = await listModernModels(apiKey, primaryModel);
+        const remainingModels = listResult.models.filter((m) => m !== secondaryModel);
+
+        for (const fallbackModel of remainingModels) {
             const attempt = await tryOpenWithSpeed(fallbackModel, 3500);
             if (attempt.ok) {
                 return await pipeGeminiSseToClient(attempt.response, attempt.model, res);

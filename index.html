@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 8</title>
+    <title>סימולציה גרסה 9</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -511,7 +511,7 @@
         <div class="header-inner">
             <div class="brand">
                 <span class="brand-dot" aria-hidden="true"></span>
-                <h1>סימולציה גרסה 8</h1>
+                <h1>סימולציה גרסה 9</h1>
             </div>
             <nav class="nav-actions" aria-label="ניווט בין דפים">
                 <span class="token-counter-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
@@ -550,8 +550,7 @@
                 class="speed-btn is-fast"
                 id="speedToggle"
                 onclick="toggleSpeedMode()"
-                title="החלף בין מצב מהיר למצב מדויק"
-                aria-pressed="true"
+                title="לחץ להחלפה בין מהיר, בינוני ומדויק"
             >⚡ מהיר</button>
             <button type="submit" class="send-btn" id="sendBtn">שלח</button>
         </form>
@@ -566,19 +565,25 @@
         const conversation = [];
         let isSending = false;
         let totalSessionTokens = 0;
-        let speedMode = localStorage.getItem('speedMode') || 'fast';
+        const SPEED_MODES = [
+            { id: 'fast', label: '⚡ מהיר' },
+            { id: 'balanced', label: '⚖️ בינוני' },
+            { id: 'accurate', label: '🧠 מדויק' }
+        ];
+        const savedSpeed = localStorage.getItem('speedMode');
+        let speedMode = SPEED_MODES.some((m) => m.id === savedSpeed) ? savedSpeed : 'fast';
 
         function applySpeedModeUi() {
             const btn = document.getElementById('speedToggle');
             if (!btn) return;
-            const isFast = speedMode === 'fast';
-            btn.textContent = isFast ? '⚡ מהיר' : '🧠 מדויק';
-            btn.classList.toggle('is-fast', isFast);
-            btn.setAttribute('aria-pressed', String(isFast));
+            const current = SPEED_MODES.find((m) => m.id === speedMode) || SPEED_MODES[0];
+            btn.textContent = current.label;
+            btn.classList.toggle('is-fast', speedMode === 'fast');
         }
 
         function toggleSpeedMode() {
-            speedMode = speedMode === 'fast' ? 'accurate' : 'fast';
+            const idx = SPEED_MODES.findIndex((m) => m.id === speedMode);
+            speedMode = SPEED_MODES[(idx + 1) % SPEED_MODES.length].id;
             localStorage.setItem('speedMode', speedMode);
             applySpeedModeUi();
         }

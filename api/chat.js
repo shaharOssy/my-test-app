@@ -1,3 +1,7 @@
+export const config = {
+    runtime: 'edge'
+};
+
 const SYSTEM_INSTRUCTION = `אתה עוזר חכם וידידותי בעברית בתוך מערכת "סימולציה".
 אתה מנהל שיחה טבעית, ברורה ותמציתית עם המשתמש.
 
@@ -7,6 +11,16 @@ const SYSTEM_INSTRUCTION = `אתה עוזר חכם וידידותי בעברית
 2. הגדר תמיד viewBox מתאים (למשל viewBox="0 0 400 260") ורוחב/גובה רספונסיביים (width="100%" height="auto" או ללא width קשיח גדול מדי).
 3. השתמש בצבעים ברורים ונעימים לעין, קווים חדים (stroke, stroke-width), וטקסט/תוויות ברורות בעברית אם זה עוזר להמחשה.
 4. הסבר בקצרה במשפט או שניים מה ציירת, מעבר לציור עצמו.`;
+
+function jsonResponse(payload, status = 200, extraHeaders = {}) {
+    return new Response(JSON.stringify(payload), {
+        status,
+        headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            ...extraHeaders
+        }
+    });
+}
 
 async function openGeminiStream(model, apiKey, requestBody, connectTimeoutMs) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
@@ -69,12 +83,15 @@ async function listModernModels(apiKey, excludeModel) {
     }
 
     const listEndpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
 
     try {
         const res = await fetch(listEndpoint, {
             method: 'GET',
-            signal: AbortSignal.timeout(3000)
+            signal: controller.signal
         });
+        clearTimeout(timer);
 
         const rawText = await res.text();
         const data = rawText ? JSON.parse(rawText) : null;
@@ -113,87 +130,99 @@ async function listModernModels(apiKey, excludeModel) {
         cachedModelsAt = Date.now();
         return { models: candidates.filter((id) => id !== excludeModel), error: null };
     } catch (err) {
+        clearTimeout(timer);
         return { models: [], error: err?.message || 'שגיאה בשליפת רשימת המודלים (ListModels).' };
     }
 }
 
-async function pipeGeminiSseToClient(geminiRes, model, res, meta = {}) {
-    res.writeHead(200, {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive'
-    });
-
-    const reader = geminiRes.body.getReader();
+function createSseResponse(geminiRes, model, meta = {}) {
+    const encoder = new TextEncoder();
     const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let latestUsage = null;
+    const reader = geminiRes.body.getReader();
 
-    try {
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+    const stream = new ReadableStream({
+        async start(controller) {
+            let buffer = '';
+            let latestUsage = null;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+            const enqueueEvent = (obj) => {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+            };
 
-            for (const rawLine of lines) {
-                const line = rawLine.trim();
-                if (!line.startsWith('data:')) continue;
-                const payloadStr = line.slice(5).trim();
-                if (!payloadStr || payloadStr === '[DONE]') continue;
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
 
-                try {
-                    const chunk = JSON.parse(payloadStr);
-                    if (chunk?.usageMetadata) {
-                        latestUsage = chunk.usageMetadata;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const rawLine of lines) {
+                        const line = rawLine.trim();
+                        if (!line.startsWith('data:')) continue;
+                        const payloadStr = line.slice(5).trim();
+                        if (!payloadStr || payloadStr === '[DONE]') continue;
+
+                        try {
+                            const chunk = JSON.parse(payloadStr);
+                            if (chunk?.usageMetadata) {
+                                latestUsage = chunk.usageMetadata;
+                            }
+                            const text = chunk?.candidates?.[0]?.content?.parts
+                                ?.map((part) => part.text || '')
+                                .join('');
+                            if (text) {
+                                enqueueEvent({ text });
+                            }
+                        } catch {
+                            // Ignore partial or non-JSON keepalive lines
+                        }
                     }
-                    const text = chunk?.candidates?.[0]?.content?.parts
-                        ?.map((part) => part.text || '')
-                        .join('');
-                    if (text) {
-                        res.write(`data: ${JSON.stringify({ text })}\n\n`);
-                    }
-                } catch {
-                    // Ignore partial or non-JSON keepalive lines
                 }
+
+                enqueueEvent({
+                    done: true,
+                    model,
+                    speedMode: meta.speedMode || 'fast',
+                    thinkingApplied: Boolean(meta.thinkingApplied),
+                    usage: latestUsage
+                });
+            } catch (err) {
+                enqueueEvent({ error: err?.message || 'הזרמת התשובה נקטעה.' });
+            } finally {
+                controller.close();
             }
         }
+    });
 
-        res.write(`data: ${JSON.stringify({
-            done: true,
-            model,
-            speedMode: meta.speedMode || 'fast',
-            thinkingApplied: Boolean(meta.thinkingApplied),
-            usage: latestUsage
-        })}\n\n`);
-    } catch (err) {
-        res.write(`data: ${JSON.stringify({ error: err?.message || 'הזרמת התשובה נקטעה.' })}\n\n`);
-    } finally {
-        res.end();
-    }
+    return new Response(stream, {
+        status: 200,
+        headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform'
+        }
+    });
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req) {
     if (req.method !== 'POST') {
-        res.setHeader('Allow', 'POST');
-        return res.status(405).json({ error: 'Method not allowed' });
+        return jsonResponse({ error: 'Method not allowed' }, 405, { Allow: 'POST' });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-        return res.status(500).json({
+        return jsonResponse({
             error: 'מפתח GEMINI_API_KEY חסר בהגדרות Vercel (Environment Variables).'
-        });
+        }, 500);
     }
 
     try {
-        const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-        const messages = Array.isArray(body.messages) ? body.messages : [];
+        const body = await req.json().catch(() => ({}));
+        const messages = Array.isArray(body?.messages) ? body.messages : [];
 
         if (messages.length === 0) {
-            return res.status(400).json({ error: 'לא התקבלו הודעות.' });
+            return jsonResponse({ error: 'לא התקבלו הודעות.' }, 400);
         }
 
         // Convert chat history to Gemini's contents format
@@ -220,7 +249,7 @@ module.exports = async function handler(req, res) {
             }
         };
 
-        const speedMode = SPEED_CONFIGS[body.speedMode] ? body.speedMode : 'fast';
+        const speedMode = SPEED_CONFIGS[body?.speedMode] ? body.speedMode : 'fast';
         const speedCfg = SPEED_CONFIGS[speedMode];
 
         const buildRequestBody = (includeThinkingConfig) => JSON.stringify({
@@ -247,26 +276,27 @@ module.exports = async function handler(req, res) {
             return { ...firstTry, thinkingApplied: false };
         };
 
-        const deadline = Date.now() + 9200;
-        const primaryTimeoutMs = speedMode === 'accurate' ? 8000 : 6500;
+        // Edge Functions allow up to 25s for initial response
+        const deadline = Date.now() + 23000;
+        const primaryTimeoutMs = speedMode === 'accurate' ? 15000 : 10000;
         const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
         const primaryResult = await tryOpenWithSpeed(primaryModel, primaryTimeoutMs);
 
         if (primaryResult.ok) {
-            return await pipeGeminiSseToClient(primaryResult.response, primaryResult.model, res, {
+            return createSseResponse(primaryResult.response, primaryResult.model, {
                 speedMode,
                 thinkingApplied: primaryResult.thinkingApplied
             });
         }
 
-        // Primary failed: try gemini-3.1-flash-lite-preview next with remaining time budget
+        // Primary failed: try gemini-3.1-flash-lite-preview next with remaining Edge budget
         const secondaryModel = 'gemini-3.1-flash-lite-preview';
         let lastResult = primaryResult;
         const remainingForSecondary = deadline - Date.now();
-        if (secondaryModel !== primaryModel && remainingForSecondary >= 2000) {
-            const secondaryResult = await tryOpenWithSpeed(secondaryModel, Math.min(remainingForSecondary, 4500));
+        if (secondaryModel !== primaryModel && remainingForSecondary >= 3000) {
+            const secondaryResult = await tryOpenWithSpeed(secondaryModel, Math.min(remainingForSecondary, 7000));
             if (secondaryResult.ok) {
-                return await pipeGeminiSseToClient(secondaryResult.response, secondaryResult.model, res, {
+                return createSseResponse(secondaryResult.response, secondaryResult.model, {
                     speedMode,
                     thinkingApplied: secondaryResult.thinkingApplied
                 });
@@ -275,16 +305,16 @@ module.exports = async function handler(req, res) {
         }
 
         // Last resort: fetch remaining modern (> 2.5) flash models via ListModels if time remains
-        if (deadline - Date.now() >= 2500) {
+        if (deadline - Date.now() >= 3000) {
             const listResult = await listModernModels(apiKey, primaryModel);
             const remainingModels = listResult.models.filter((m) => m !== secondaryModel);
 
             for (const fallbackModel of remainingModels) {
                 const remainingMs = deadline - Date.now();
-                if (remainingMs < 2000) break;
-                const attempt = await tryOpenWithSpeed(fallbackModel, Math.min(remainingMs, 3500));
+                if (remainingMs < 2500) break;
+                const attempt = await tryOpenWithSpeed(fallbackModel, Math.min(remainingMs, 5000));
                 if (attempt.ok) {
-                    return await pipeGeminiSseToClient(attempt.response, attempt.model, res, {
+                    return createSseResponse(attempt.response, attempt.model, {
                         speedMode,
                         thinkingApplied: attempt.thinkingApplied
                     });
@@ -293,13 +323,13 @@ module.exports = async function handler(req, res) {
             }
         }
 
-        return res.status(lastResult.status).json({
+        return jsonResponse({
             error: `${lastResult.error} (ניסיון קודם מול ${primaryModel}: ${primaryResult.error})`
-        });
+        }, lastResult.status);
     } catch (err) {
-        return res.status(500).json({
+        return jsonResponse({
             error: 'אירעה שגיאה בשרת בעת עיבוד הבקשה.',
             details: err?.message || String(err)
-        });
+        }, 500);
     }
-};
+}

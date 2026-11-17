@@ -8,6 +8,20 @@ const SYSTEM_INSTRUCTION = `אתה עוזר חכם וידידותי בעברית
 3. השתמש בצבעים ברורים ונעימים לעין, קווים חדים (stroke, stroke-width), וטקסט/תוויות ברורות בעברית אם זה עוזר להמחשה.
 4. הסבר בקצרה במשפט או שניים מה ציירת, מעבר לציור עצמו.`;
 
+function isRetryableModelError(status, errMsg) {
+    if (status === 503 || status === 429 || status === 404) {
+        return true;
+    }
+    const lower = (errMsg || '').toLowerCase();
+    return (
+        lower.includes('high demand') ||
+        lower.includes('overloaded') ||
+        lower.includes('unavailable') ||
+        lower.includes('resource exhausted') ||
+        lower.includes('not found')
+    );
+}
+
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -38,37 +52,59 @@ module.exports = async function handler(req, res) {
                 parts: [{ text: msg.text }]
             }));
 
-        const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+        const fallbackModels = [
+            primaryModel,
+            'gemini-3.8-flash-lite',
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite'
+        ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
-        const geminiRes = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                systemInstruction: {
-                    parts: [{ text: SYSTEM_INSTRUCTION }]
-                },
-                contents,
-                generationConfig: {
-                    temperature: 0.7
-                }
-            })
+        const requestBody = JSON.stringify({
+            systemInstruction: {
+                parts: [{ text: SYSTEM_INSTRUCTION }]
+            },
+            contents,
+            generationConfig: {
+                temperature: 0.7
+            }
         });
 
-        const data = await geminiRes.json();
+        let lastStatus = 500;
+        let lastError = 'שגיאה בפנייה למודל ה-AI.';
 
-        if (!geminiRes.ok) {
-            const errMsg = data?.error?.message || 'שגיאה בפנייה למודל ה-AI.';
-            return res.status(geminiRes.status).json({ error: errMsg });
+        for (let i = 0; i < fallbackModels.length; i++) {
+            const model = fallbackModels[i];
+            const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+            const geminiRes = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: requestBody
+            });
+
+            const data = await geminiRes.json();
+
+            if (geminiRes.ok) {
+                const reply =
+                    data?.candidates?.[0]?.content?.parts
+                        ?.map((part) => part.text || '')
+                        .join('\n')
+                        .trim() || 'לא התקבלה תשובה מהמודל.';
+
+                return res.status(200).json({ reply, model });
+            }
+
+            lastStatus = geminiRes.status;
+            lastError = data?.error?.message || lastError;
+
+            const hasMoreModels = i < fallbackModels.length - 1;
+            if (!hasMoreModels || !isRetryableModelError(lastStatus, lastError)) {
+                break;
+            }
         }
 
-        const reply =
-            data?.candidates?.[0]?.content?.parts
-                ?.map((part) => part.text || '')
-                .join('\n')
-                .trim() || 'לא התקבלה תשובה מהמודל.';
-
-        return res.status(200).json({ reply });
+        return res.status(lastStatus).json({ error: lastError });
     } catch (err) {
         return res.status(500).json({
             error: 'אירעה שגיאה בשרת בעת עיבוד הבקשה.',

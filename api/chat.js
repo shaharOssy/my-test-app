@@ -54,7 +54,15 @@ function getModernGeminiVersion(modelId) {
     return Number.isFinite(version) && version > 2.5 ? version : null;
 }
 
+let cachedModels = null;
+let cachedModelsAt = 0;
+const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
+
 async function listModernModels(apiKey, excludeModel) {
+    if (cachedModels && Date.now() - cachedModelsAt < MODELS_CACHE_TTL_MS) {
+        return { models: cachedModels.filter((id) => id !== excludeModel), error: null };
+    }
+
     const listEndpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`;
 
     try {
@@ -96,7 +104,9 @@ async function listModernModels(apiKey, excludeModel) {
                 return aLite - bLite;
             });
 
-        return { models: candidates, error: null };
+        cachedModels = candidates;
+        cachedModelsAt = Date.now();
+        return { models: candidates.filter((id) => id !== excludeModel), error: null };
     } catch (err) {
         return { models: [], error: err?.message || 'שגיאה בשליפת רשימת המודלים (ListModels).' };
     }
@@ -180,18 +190,34 @@ module.exports = async function handler(req, res) {
                 parts: [{ text: msg.text }]
             }));
 
-        const requestBody = JSON.stringify({
+        const speedMode = body.speedMode === 'accurate' ? 'accurate' : 'fast';
+
+        const buildRequestBody = (disableThinking) => JSON.stringify({
             systemInstruction: {
                 parts: [{ text: SYSTEM_INSTRUCTION }]
             },
             contents,
             generationConfig: {
-                temperature: 0.7
+                temperature: 0.7,
+                ...(disableThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {})
             }
         });
 
+        const tryOpenWithSpeed = async (model, timeoutMs) => {
+            const preferNoThinking = speedMode === 'fast';
+            const firstTry = await openGeminiStream(model, apiKey, buildRequestBody(preferNoThinking), timeoutMs);
+            if (firstTry.ok || !preferNoThinking) {
+                return firstTry;
+            }
+            const errLower = (firstTry.error || '').toLowerCase();
+            if (firstTry.status === 400 && errLower.includes('thinking')) {
+                return await openGeminiStream(model, apiKey, buildRequestBody(false), timeoutMs);
+            }
+            return firstTry;
+        };
+
         const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-        const primaryResult = await openGeminiStream(primaryModel, apiKey, requestBody, 4500);
+        const primaryResult = await tryOpenWithSpeed(primaryModel, 4500);
 
         if (primaryResult.ok) {
             return await pipeGeminiSseToClient(primaryResult.response, primaryResult.model, res);
@@ -207,7 +233,7 @@ module.exports = async function handler(req, res) {
 
         let lastResult = primaryResult;
         for (const fallbackModel of listResult.models) {
-            const attempt = await openGeminiStream(fallbackModel, apiKey, requestBody, 3500);
+            const attempt = await tryOpenWithSpeed(fallbackModel, 3500);
             if (attempt.ok) {
                 return await pipeGeminiSseToClient(attempt.response, attempt.model, res);
             }

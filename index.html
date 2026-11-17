@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 6</title>
+    <title>סימולציה גרסה 7</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -360,6 +360,121 @@
             cursor: not-allowed;
         }
 
+        .speed-btn {
+            border: 1px solid var(--border);
+            background: var(--surface-muted);
+            color: var(--text);
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 0.86rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.15s ease;
+        }
+
+        .speed-btn:hover {
+            border-color: var(--primary);
+            transform: translateY(-1px);
+        }
+
+        .speed-btn.is-fast {
+            background: var(--primary-soft);
+            border-color: var(--primary);
+        }
+
+        .typing-dots {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 2px;
+        }
+
+        .typing-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--primary);
+            opacity: 0.4;
+            animation: typingBounce 1.1s infinite ease-in-out;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.18s;
+        }
+
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.36s;
+        }
+
+        @keyframes typingBounce {
+            0%, 80%, 100% {
+                transform: translateY(0);
+                opacity: 0.35;
+            }
+            40% {
+                transform: translateY(-5px);
+                opacity: 1;
+            }
+        }
+
+        .stream-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.05em;
+            background: var(--primary);
+            vertical-align: text-bottom;
+            margin-right: 3px;
+            animation: cursorBlink 0.8s infinite;
+        }
+
+        @keyframes cursorBlink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+        }
+
+        .svg-drawing-placeholder {
+            margin-top: 10px;
+            border: 1px dashed var(--primary);
+            border-radius: 14px;
+            padding: 16px;
+            background: var(--primary-soft);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            color: var(--text);
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .svg-progress-bar {
+            width: 100%;
+            max-width: 240px;
+            height: 6px;
+            border-radius: 999px;
+            background: var(--border);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .svg-progress-bar::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 45%;
+            background: var(--primary);
+            border-radius: 999px;
+            animation: svgSlide 1.1s infinite ease-in-out;
+        }
+
+        @keyframes svgSlide {
+            0% { right: -45%; }
+            100% { right: 105%; }
+        }
+
         @media (max-width: 600px) {
             .message-row,
             .message-row.assistant {
@@ -373,7 +488,7 @@
         <div class="header-inner">
             <div class="brand">
                 <span class="brand-dot" aria-hidden="true"></span>
-                <h1>סימולציה גרסה 6</h1>
+                <h1>סימולציה גרסה 7</h1>
             </div>
             <nav class="nav-actions" aria-label="ניווט בין דפים">
                 <a href="landing.html" class="nav-btn">הדף המקורי</a>
@@ -406,6 +521,14 @@
                 placeholder="כתוב הודעה או בקש לצייר צורה (למשל: צייר מקבילית)..."
                 required
             ></textarea>
+            <button
+                type="button"
+                class="speed-btn is-fast"
+                id="speedToggle"
+                onclick="toggleSpeedMode()"
+                title="החלף בין מצב מהיר למצב מדויק"
+                aria-pressed="true"
+            >⚡ מהיר</button>
             <button type="submit" class="send-btn" id="sendBtn">שלח</button>
         </form>
     </main>
@@ -418,6 +541,24 @@
 
         const conversation = [];
         let isSending = false;
+        let speedMode = localStorage.getItem('speedMode') || 'fast';
+
+        function applySpeedModeUi() {
+            const btn = document.getElementById('speedToggle');
+            if (!btn) return;
+            const isFast = speedMode === 'fast';
+            btn.textContent = isFast ? '⚡ מהיר' : '🧠 מדויק';
+            btn.classList.toggle('is-fast', isFast);
+            btn.setAttribute('aria-pressed', String(isFast));
+        }
+
+        function toggleSpeedMode() {
+            speedMode = speedMode === 'fast' ? 'accurate' : 'fast';
+            localStorage.setItem('speedMode', speedMode);
+            applySpeedModeUi();
+        }
+
+        applySpeedModeUi();
 
         function toggleTheme() {
             const isDark = document.body.classList.toggle('dark-mode');
@@ -593,12 +734,28 @@
             }
 
             if (hasIncompleteSvg) {
-                const drawingNote = document.createElement('div');
-                drawingNote.style.color = 'var(--text-muted)';
-                drawingNote.style.marginTop = '6px';
-                drawingNote.textContent = 'מצייר SVG...';
-                bubble.appendChild(drawingNote);
+                const placeholder = document.createElement('div');
+                placeholder.className = 'svg-drawing-placeholder';
+                placeholder.innerHTML = '<span>🎨 מצייר את השרטוט...</span><div class="svg-progress-bar"></div>';
+                bubble.appendChild(placeholder);
+            } else if (isStreaming) {
+                const cursor = document.createElement('span');
+                cursor.className = 'stream-cursor';
+                cursor.setAttribute('aria-hidden', 'true');
+                const lastChild = bubble.lastElementChild;
+                if (lastChild && lastChild.tagName === 'DIV' && !lastChild.classList.contains('svg-card')) {
+                    lastChild.appendChild(cursor);
+                } else {
+                    bubble.appendChild(cursor);
+                }
             }
+        }
+
+        function createTypingBubble() {
+            const row = appendMessage('assistant', '');
+            const bubble = row.querySelector('.bubble');
+            bubble.innerHTML = '<div class="typing-dots" aria-label="מקליד..."><span></span><span></span><span></span></div>';
+            return row;
         }
 
         function appendMessage(role, text, isError = false) {
@@ -637,14 +794,14 @@
             appendMessage('user', text);
             conversation.push({ role: 'user', text });
 
-            const assistantRow = appendMessage('assistant', 'חושב...');
+            const assistantRow = createTypingBubble();
             const assistantBubble = assistantRow.querySelector('.bubble');
 
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messages: conversation })
+                    body: JSON.stringify({ messages: conversation, speedMode })
                 });
 
                 const contentType = (response.headers.get('content-type') || '').toLowerCase();

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>סימולציה גרסה 17</title>
+    <title>סימולציה גרסה 18</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -86,12 +86,12 @@
             background: rgba(255, 255, 255, 0.85);
         }
 
-        /* Main 3-Column Workspace (RTL: Right = Info, Center = Board (1fr), Left = Chat (2fr)) */
+        /* Main 3-Column Workspace (RTL: Right = Info, Center = Chat (1fr), Left = Board (1fr)) */
         .workspace {
             flex: 1;
             min-height: 0;
             display: grid;
-            grid-template-columns: 250px 1fr 2fr;
+            grid-template-columns: 250px 1fr 1fr;
             gap: 12px;
         }
 
@@ -964,7 +964,7 @@
     <!-- Subtle top utility bar preserving version number, token counter, and side pages -->
     <div class="top-utility">
         <div class="top-utility-right">
-            <span>סימולציה גרסה 17</span>
+            <span>סימולציה גרסה 18</span>
             <span class="util-pill" id="sessionTokensPill" title="סך כל הטוקנים בשיחה הנוכחית">טוקנים בשיחה: 0</span>
         </div>
         <div class="top-utility-links">
@@ -1023,7 +1023,62 @@
             </div>
         </aside>
 
-        <!-- CENTER COLUMN: Interactive Whiteboard ("הלוח") -->
+        <!-- CENTER COLUMN: Real AI Chat ("השיחה") -->
+        <section class="chat-panel" aria-label="השיחה">
+            <div class="chat-header">
+                <div class="chat-header-title">
+                    <h2>השיחה</h2>
+                    <div class="chat-online">
+                        <span class="online-dot" aria-hidden="true"></span>
+                        <span>עמית</span>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    class="speed-btn is-fast"
+                    id="speedToggle"
+                    onclick="toggleSpeedMode()"
+                    title="לחץ להחלפה בין מהיר, בינוני ומדויק"
+                >⚡ מהיר</button>
+            </div>
+
+            <div class="chat-messages" id="chatMessages" aria-live="polite">
+                <div class="welcome-card" id="emptyState">
+                    <h3>איך זה עובד</h3>
+                    <ol class="welcome-list">
+                        <li>1. מסתכלים על המשימה והמחברות (בעמודה הימנית).</li>
+                        <li>2. מדברים עם עמית בצ'אט, או מבקשים לשרטט צורות על הלוח.</li>
+                        <li>3. כותבים ומקשקשים חופשי על הלוח, או מבקשים מהבינה המלאכותית לצייר ב-SVG ישירות על הלוח.</li>
+                    </ol>
+                    <button type="button" class="start-lesson-btn" onclick="startLessonPrompt()">התחלת השיעור</button>
+                    <div class="quick-chips">
+                        <button type="button" class="suggestion-chip" onclick="useSuggestion('צייר מקבילית על הלוח')">צייר מקבילית</button>
+                        <button type="button" class="suggestion-chip" onclick="useSuggestion('צייר משולש ישר זווית עם סימון צלעות')">משולש ישר זווית</button>
+                        <button type="button" class="suggestion-chip" onclick="useSuggestion('תסביר עם נוסחה למה ב- $x^2=5x$ אסור פשוט לחלק ב-$x$')">נוסחה ב-LaTeX</button>
+                    </div>
+                </div>
+            </div>
+
+            <form class="chat-footer" id="chatForm" onsubmit="handleSubmit(event)">
+                <div class="composer-row">
+                    <button type="submit" class="circle-send-btn" id="sendBtn" title="שלח הודעה">↑</button>
+                    <div class="circle-mic-deco" aria-hidden="true">🎙️</div>
+                    <div class="input-pill-box">
+                        <textarea
+                            id="messageInput"
+                            rows="1"
+                            placeholder="כתוב הודעה או בקש לצייר על הלוח..."
+                            required
+                        ></textarea>
+                    </div>
+                </div>
+                <div class="footer-controls-row">
+                    <span class="footer-hint">Enter שולח · Shift+Enter שורה חדשה · ציורי SVG מופיעים על הלוח</span>
+                </div>
+            </form>
+        </section>
+
+        <!-- LEFT COLUMN: Interactive Whiteboard ("הלוח") -->
         <section class="board-panel" aria-label="הלוח">
             <div class="board-header">
                 <div class="board-title-row">
@@ -1082,61 +1137,6 @@
                     </div>
                 </div>
             </div>
-        </section>
-
-        <!-- LEFT COLUMN: Real AI Chat ("השיחה") -->
-        <section class="chat-panel" aria-label="השיחה">
-            <div class="chat-header">
-                <div class="chat-header-title">
-                    <h2>השיחה</h2>
-                    <div class="chat-online">
-                        <span class="online-dot" aria-hidden="true"></span>
-                        <span>עמית</span>
-                    </div>
-                </div>
-                <button
-                    type="button"
-                    class="speed-btn is-fast"
-                    id="speedToggle"
-                    onclick="toggleSpeedMode()"
-                    title="לחץ להחלפה בין מהיר, בינוני ומדויק"
-                >⚡ מהיר</button>
-            </div>
-
-            <div class="chat-messages" id="chatMessages" aria-live="polite">
-                <div class="welcome-card" id="emptyState">
-                    <h3>איך זה עובד</h3>
-                    <ol class="welcome-list">
-                        <li>1. מסתכלים על המשימה והמחברות (בעמודה הימנית).</li>
-                        <li>2. מדברים עם עמית בצ'אט, או מבקשים לשרטט צורות על הלוח.</li>
-                        <li>3. כותבים ומקשקשים חופשי על הלוח, או מבקשים מהבינה המלאכותית לצייר ב-SVG ישירות על הלוח.</li>
-                    </ol>
-                    <button type="button" class="start-lesson-btn" onclick="startLessonPrompt()">התחלת השיעור</button>
-                    <div class="quick-chips">
-                        <button type="button" class="suggestion-chip" onclick="useSuggestion('צייר מקבילית על הלוח')">צייר מקבילית</button>
-                        <button type="button" class="suggestion-chip" onclick="useSuggestion('צייר משולש ישר זווית עם סימון צלעות')">משולש ישר זווית</button>
-                        <button type="button" class="suggestion-chip" onclick="useSuggestion('תסביר עם נוסחה למה ב- $x^2=5x$ אסור פשוט לחלק ב-$x$')">נוסחה ב-LaTeX</button>
-                    </div>
-                </div>
-            </div>
-
-            <form class="chat-footer" id="chatForm" onsubmit="handleSubmit(event)">
-                <div class="composer-row">
-                    <button type="submit" class="circle-send-btn" id="sendBtn" title="שלח הודעה">↑</button>
-                    <div class="circle-mic-deco" aria-hidden="true">🎙️</div>
-                    <div class="input-pill-box">
-                        <textarea
-                            id="messageInput"
-                            rows="1"
-                            placeholder="כתוב הודעה או בקש לצייר על הלוח..."
-                            required
-                        ></textarea>
-                    </div>
-                </div>
-                <div class="footer-controls-row">
-                    <span class="footer-hint">Enter שולח · Shift+Enter שורה חדשה · ציורי SVG מופיעים על הלוח</span>
-                </div>
-            </form>
         </section>
     </div>
 

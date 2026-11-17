@@ -8,20 +8,6 @@ const SYSTEM_INSTRUCTION = `אתה עוזר חכם וידידותי בעברית
 3. השתמש בצבעים ברורים ונעימים לעין, קווים חדים (stroke, stroke-width), וטקסט/תוויות ברורות בעברית אם זה עוזר להמחשה.
 4. הסבר בקצרה במשפט או שניים מה ציירת, מעבר לציור עצמו.`;
 
-function isRetryableModelError(status, errMsg) {
-    if (status === 503 || status === 429 || status === 404) {
-        return true;
-    }
-    const lower = (errMsg || '').toLowerCase();
-    return (
-        lower.includes('high demand') ||
-        lower.includes('overloaded') ||
-        lower.includes('unavailable') ||
-        lower.includes('resource exhausted') ||
-        lower.includes('not found')
-    );
-}
-
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -55,9 +41,7 @@ module.exports = async function handler(req, res) {
         const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
         const fallbackModels = [
             primaryModel,
-            'gemini-3.8-flash-lite',
-            'gemini-2.5-flash',
-            'gemini-2.5-flash-lite'
+            'gemini-3.8-flash-lite'
         ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
         const requestBody = JSON.stringify({
@@ -76,31 +60,42 @@ module.exports = async function handler(req, res) {
         for (let i = 0; i < fallbackModels.length; i++) {
             const model = fallbackModels[i];
             const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+            const timeoutMs = i === 0 ? 4000 : 5000;
 
-            const geminiRes = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: requestBody
-            });
+            try {
+                const geminiRes = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: requestBody,
+                    signal: AbortSignal.timeout(timeoutMs)
+                });
 
-            const data = await geminiRes.json();
+                const rawText = await geminiRes.text();
+                let data = null;
+                try {
+                    data = rawText ? JSON.parse(rawText) : null;
+                } catch {
+                    data = null;
+                }
 
-            if (geminiRes.ok) {
-                const reply =
-                    data?.candidates?.[0]?.content?.parts
-                        ?.map((part) => part.text || '')
-                        .join('\n')
-                        .trim() || 'לא התקבלה תשובה מהמודל.';
+                if (geminiRes.ok) {
+                    const reply =
+                        data?.candidates?.[0]?.content?.parts
+                            ?.map((part) => part.text || '')
+                            .join('\n')
+                            .trim() || 'לא התקבלה תשובה מהמודל.';
 
-                return res.status(200).json({ reply, model });
-            }
+                    return res.status(200).json({ reply, model });
+                }
 
-            lastStatus = geminiRes.status;
-            lastError = data?.error?.message || lastError;
-
-            const hasMoreModels = i < fallbackModels.length - 1;
-            if (!hasMoreModels || !isRetryableModelError(lastStatus, lastError)) {
-                break;
+                lastStatus = geminiRes.status || 502;
+                lastError = data?.error?.message || `המודל ${model} החזיר שגיאה (${lastStatus}).`;
+            } catch (err) {
+                const isTimeout = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+                lastStatus = isTimeout ? 504 : 502;
+                lastError = isTimeout
+                    ? `המודל ${model} לא הגיב בזמן (${timeoutMs / 1000} שניות).`
+                    : (err?.message || `שגיאת תקשורת מול המודל ${model}.`);
             }
         }
 
